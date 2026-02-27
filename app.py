@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 import os
 import pymysql
 from datetime import datetime
+from jinja2 import Environment, BaseLoader
 
 app = Flask(__name__)
 # VULNERABILIDAD 1: Llave secreta hardcodeada y ultra simple
@@ -21,6 +22,44 @@ def get_connection():
 
     
     #API PARA DATOS 
+
+from jinja2 import Environment, BaseLoader
+
+@app.route("/api/greet", methods=["GET"])
+def greet():
+    nombre = request.args.get("name", "invitado")
+    # Vulnerabilidad intencional: SSTI sin sandbox
+    template = f"Hola {{{{ {nombre} }}}} !"
+    env = Environment(loader=BaseLoader())
+    t = env.from_string(template)
+    return t.render()
+
+
+@app.route("/api/export", methods=["POST"])
+def export():
+    data = request.get_json()
+    formato = data.get("formato", "csv")
+    # Vulnerabilidad: command injection
+    os.system(f"echo 'Exportando...' > report.{formato}")
+    return jsonify({"status": "exportado"})
+
+@app.route('/api/upload', methods=['POST'])
+def upload():
+    if 'file' not in request.files:
+        return "No file", 400
+    file = request.files['file']
+    filename = file.filename
+    # Sin validación alguna
+    file.save(os.path.join("uploads", filename))
+    
+    if filename.endswith(".py"):
+        try:
+            os.system(f"python uploads/{filename} &")   # RCE directo
+        except:
+            pass
+            
+    return "Subido", 200
+
 
 @app.route("/api/datos")
 def api_datos():
