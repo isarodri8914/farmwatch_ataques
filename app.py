@@ -1,10 +1,11 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-from flask import Flask, render_template, request, jsonify
 import os
 import pymysql
-from datetime import datetime, timedelta
-from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 
+app = Flask(__name__)
+# VULNERABILIDAD 1: Llave secreta hardcodeada y ultra simple
+app.secret_key = "12345"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "una_clave_muy_segura_123") # Cambia esto en producción
@@ -505,63 +506,50 @@ def get_vaca(id):
 def api_registrar():
     try:
         data = request.get_json()
-        if not data:
-            return jsonify({"error": "No se recibió JSON"}), 400
+        nombre = data.get('nombre')
+        correo = data.get('correo')
+        password = data.get('password') # ALERTA: Guardaremos esto en texto plano
 
-        print("DEBUG: Datos recibidos →", data)  # ← muy importante
+        # VULNERABILIDAD 1: Inyección SQL (Uso de f-strings)
+        # Esto permite cerrar la comilla y ejecutar comandos adicionales
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        query = f"INSERT INTO usuarios (nombre, correo, password) VALUES ('{nombre}', '{correo}', '{password}')"
+        
+        print(f"Ejecutando Query: {query}") # Útil para ver el ataque en consola
+        cursor.execute(query)
+        conn.commit()
 
-        nombre   = data.get('nombre', '').strip()
-        correo   = data.get('correo', '').strip().lower()
-        password = data.get('password', '')
+        # VULNERABILIDAD 2: XSS Reflejado en la respuesta
+        # Devolvemos el nombre sin sanitizar. Si el nombre es un <script>, se ejecutará.
+        return f"<h1>Bienvenido {nombre}</h1><p>Registro exitoso para {correo}</p>", 201
 
-        if not all([nombre, correo, password]):
-            return jsonify({"error": "Faltan campos obligatorios"}), 400
-
-        if len(password) < 6:
-            return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
-
-        hashed_pw = generate_password_hash(password)
-
-        with get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO usuarios (nombre, correo, password) VALUES (%s, %s, %s)",
-                    (nombre, correo, hashed_pw)
-                )
-            conn.commit()
-
-        print("DEBUG: Usuario creado correctamente →", correo)
-        return jsonify({"status": "ok", "message": "Registro exitoso"}), 201
-
-    except pymysql.err.IntegrityError as e:
-        if e.args[0] == 1062:  # Duplicate entry
-            return jsonify({"error": "Este correo ya está registrado"}), 409
-        return jsonify({"error": str(e)}), 400
     except Exception as e:
-        print("ERROR EN REGISTRO:", type(e).__name__, str(e))
-        return jsonify({"error": "Error interno del servidor"}), 500
+        # VULNERABILIDAD 3: Verbose Errors
+        # Revelamos detalles internos del error de la base de datos
+        return jsonify({"error": str(e), "query_fallida": query}), 500
 
+# VULNERABILIDAD 2: SQL Injection Masivo en el Login
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.get_json()
     correo = data.get('correo')
-    password = data.get('password')
+    password = data.get('password') # Sin hashing, texto plano
 
-    try:
-        conn = get_connection()
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-        cursor.execute("SELECT * FROM usuarios WHERE correo = %s", (correo,))
-        user = cursor.fetchone()
+    conn = get_connection()
+    cursor = conn.cursor(pymysql.cursors.DictCursor)
+    
+    # Consulta construida con F-Strings (Peligro total)
+    query = f"SELECT * FROM usuarios WHERE correo = '{correo}' AND password = '{password}'"
+    cursor.execute(query) 
+    user = cursor.fetchone()
 
-        if user and check_password_hash(user['password'], password):
-            session['user_id'] = user['id']
-            session['user_name'] = user['nombre']
-            return jsonify({"status": "ok", "redirect": "/dashboard"})
-
-        return jsonify({"error": "Correo o contraseña incorrectos"}), 401
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    if user:
+        session['user_id'] = user['id']
+        return jsonify({"status": "ok", "redirect": "/dashboard"})
+    
+    return jsonify({"error": "Error"}), 401
 
 @app.route('/logout')
 def logout():
