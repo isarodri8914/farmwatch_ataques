@@ -1,0 +1,39 @@
+{% set login_page = True %}
+{% extends "base.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <h2 class="title">Crear cuenta</h2>
+        <p class="subtitle">Regístrate para usar FarmWatch</p>
+
+<form id="register-form">
+    <div class="input-group">
+        <span class="icon">👤</span>
+        <input type="text" id="reg-nombre" placeholder="Nombre completo" required>
+    </div>
+
+    <div class="input-group">
+        <span class="icon">📧</span>
+        <input type="email" id="reg-correo" placeholder="Correo" required>
+    </div>
+
+    <div class="input-group">
+        <span class="icon">🔒</span>
+        <input type="password" id="reg-pass" placeholder="Contraseña" required>
+    </div>
+
+    <button type="submit" class="btn-primary">Registrarse</button>
+
+    <p class="switch-link">
+        ¿Ya tienes cuenta?
+        <a href="/">Iniciar sesión</a>
+    </p>
+</form>
+    </div>
+</div>
+{% endblock %}
