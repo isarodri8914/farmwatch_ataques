@@ -530,26 +530,40 @@ def api_registrar():
         # Revelamos detalles internos del error de la base de datos
         return jsonify({"error": str(e), "query_fallida": query}), 500
 
-# VULNERABILIDAD 2: SQL Injection Masivo en el Login
+# VULNERABILIDAD: SQL Injection con Error Leakage
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.get_json()
     correo = data.get('correo')
-    password = data.get('password') # Sin hashing, texto plano
+    password = data.get('password')
 
     conn = get_connection()
+    # Usamos DictCursor para que el atacante pueda intentar extraer columnas específicas
     cursor = conn.cursor(pymysql.cursors.DictCursor)
     
-    # Consulta construida con F-Strings (Peligro total)
+    # La query más insegura posible
     query = f"SELECT * FROM usuarios WHERE correo = '{correo}' AND password = '{password}'"
-    cursor.execute(query) 
-    user = cursor.fetchone()
-
-    if user:
-        session['user_id'] = user['id']
-        return jsonify({"status": "ok", "redirect": "/dashboard"})
     
-    return jsonify({"error": "Error"}), 401
+    try:
+        cursor.execute(query) 
+        user = cursor.fetchone()
+
+        if user:
+            # Creamos la sesión basada en lo que devuelva la base de datos
+            session['user_id'] = user['id']
+            session['nombre'] = user['nombre']
+            return jsonify({"status": "ok", "redirect": "/dashboard"})
+        
+        return jsonify({"error": "Credenciales inválidas"}), 401
+
+    except Exception as e:
+        # ATENCION: Esto es oro para un Pentester. 
+        # Si la query falla, le devolvemos el error exacto de MySQL y la query que intentamos.
+        return jsonify({
+            "error": "Error en el servidor",
+            "debug_info": str(e),
+            "executed_query": query
+        }), 500
 
 @app.route('/logout')
 def logout():
