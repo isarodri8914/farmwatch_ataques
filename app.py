@@ -618,17 +618,38 @@ def login():
 # ... (mantén tus imports y get_connection igual)
 
 # VULNERABILIDAD NUEVA: Endpoint de configuración sin ninguna validación
+# ==================== VERSIÓN CORREGIDA (REEMPLAZA LA FUNCIÓN ENTERA) ====================
 @app.route("/api/admin/config", methods=["POST"])
 def set_global_config():
     data = request.get_json()
-    msg = data.get("banner_mensaje")
-    conn = get_connection()
-    cursor = conn.cursor()
-    # Guardamos el mensaje "Global" que se verá en todas las páginas
-    query = f"INSERT INTO configuracion (clave, valor) VALUES ('banner', '{msg}') ON DUPLICATE KEY UPDATE valor='{msg}'"
-    cursor.execute(query)
-    conn.commit()
-    return jsonify({"status": "Configuración global actualizada"}), 200
+    msg = data.get("banner_mensaje") or ""
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # ←←← ESTO ES LO QUE ARREGLA TODO ←←←
+        # Ahora acepta CUALQUIER payload (incluyendo ', ", <script>, onerror, etc.)
+        query = """
+            INSERT INTO configuracion (clave, valor)
+            VALUES ('banner', %s)
+            ON DUPLICATE KEY UPDATE valor = %s
+        """
+        cursor.execute(query, (msg, msg))
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "status": "Configuración global actualizada",
+            "banner_guardado": msg[:100] + "..." if len(msg) > 100 else msg
+        }), 200
+
+    except Exception as e:
+        # En lab es útil ver el error real
+        return jsonify({"error": str(e)}), 500
+# ====================================================================================
 
 # MODIFICACIÓN EN DASHBOARD: Renderizado inseguro
 @app.route("/dashboard")
