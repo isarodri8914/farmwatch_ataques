@@ -615,12 +615,38 @@ def logout():
 def login():
     return render_template('login.html')
 
-@app.route('/dashboard')
+# ... (mantén tus imports y get_connection igual)
+
+# VULNERABILIDAD NUEVA: Endpoint de configuración sin ninguna validación
+@app.route("/api/admin/config", methods=["POST"])
+def set_global_config():
+    data = request.get_json()
+    msg = data.get("banner_mensaje")
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Guardamos el mensaje "Global" que se verá en todas las páginas
+    query = f"INSERT INTO configuracion (clave, valor) VALUES ('banner', '{msg}') ON DUPLICATE KEY UPDATE valor='{msg}'"
+    cursor.execute(query)
+    conn.commit()
+    return jsonify({"status": "Configuración global actualizada"}), 200
+
+# MODIFICACIÓN EN DASHBOARD: Renderizado inseguro
+@app.route("/dashboard")
 def dashboard():
-    # Esta es la pared de seguridad
     if 'user_id' not in session:
-        return redirect(url_for('login')) # Si no hay sesión, lo saca de aquí
-    return render_template('dashboard.html')
+        return redirect(url_for('login'))
+    
+    # Obtenemos el banner de la base de datos
+    conn = get_connection()
+    cursor = conn.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("SELECT valor FROM configuracion WHERE clave='banner'")
+    banner = cursor.fetchone()
+    
+    # Pasamos el banner al template. 
+    # NOTA: En el HTML deberías usar {{ banner | safe }} para el secuestro total
+    return render_template('dashboard.html', global_alert=banner['valor'] if banner else "")
+
+
 
 @app.route('/cows')
 def cows():
